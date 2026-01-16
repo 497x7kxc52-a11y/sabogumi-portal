@@ -1,0 +1,290 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>部活管理ポータル</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+header { background: #333; color: #fff; padding: 12px; text-align: center; }
+nav { display: flex; overflow-x: auto; background: #222; }
+nav button {
+  flex: 1; padding: 12px; border: none; background: #222; color: #fff;
+  font-size: 14px; white-space: nowrap;
+}
+nav button.active { background: #444; }
+
+.section { display: none; padding: 15px; }
+textarea, input, select {
+  width: 100%; padding: 10px; margin-top: 10px; font-size: 16px;
+}
+.card {
+  background: #fff; padding: 12px; margin-top: 10px;
+  border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+</style>
+</head>
+
+<body>
+
+<!-- 🔐 パスワード画面 -->
+<div id="passwordScreen" style="padding:20px;">
+  <h2>パスワードを入力</h2>
+  <input id="pwInput" type="password" placeholder="パスワード">
+  <button onclick="checkPW()" style="margin-top:10px;width:100%;padding:10px;">ログイン</button>
+</div>
+
+<!-- 🧑‍💻 名前登録画面 -->
+<div id="nameScreen" style="padding:20px; display:none;">
+  <h2>名前を登録してください</h2>
+  <input id="nameInput" type="text" placeholder="例：竣">
+  <button onclick="saveName()" style="margin-top:10px;width:100%;padding:10px;">登録</button>
+</div>
+
+<!-- 🔓 アプリ本体 -->
+<div id="app" style="display:none;">
+<header>部活管理ポータル</header>
+
+<nav>
+  <button onclick="show('reason', this)" class="active">サボる理由</button>
+  <button onclick="show('opinion', this)">ご意見</button>
+  <button onclick="show('posts', this)">投稿一覧</button>
+  <button onclick="show('dates', this)">オフ・部停日</button>
+  <button onclick="show('manage', this)">管理</button>
+</nav>
+
+<!-- サボる理由 -->
+<div id="reason" class="section" style="display:block;">
+  <h3>サボる理由を投稿</h3>
+  <textarea id="reasonText" placeholder="理由を入力"></textarea>
+  <button onclick="saveReason()">投稿</button>
+</div>
+
+<!-- ご意見 -->
+<div id="opinion" class="section">
+  <h3>ご意見を投稿</h3>
+  <textarea id="opinionText" placeholder="意見を入力"></textarea>
+  <button onclick="saveOpinion()">投稿</button>
+</div>
+
+<!-- 投稿一覧 -->
+<div id="posts" class="section">
+  <h3>投稿一覧</h3>
+  <div id="postList"></div>
+</div>
+
+<!-- 管理（オフ/部停登録） -->
+<div id="manage" class="section">
+  <h3>オフ / 部停 の登録</h3>
+  <input id="dateInput" type="date">
+  <select id="typeInput">
+    <option value="オフ">オフ</option>
+    <option value="部停">部停</option>
+  </select>
+  <button onclick="addDate()">登録</button>
+
+  <h3 style="margin-top:20px;">登録済み</h3>
+  <div id="dateList"></div>
+</div>
+
+<!-- オフ・部停日 -->
+<div id="dates" class="section">
+  <h3>次のオフ日</h3>
+  <div id="nextOff" class="card" style="font-size:22px; font-weight:bold;"></div>
+
+  <h3 style="margin-top:20px;">オフ・部停日一覧</h3>
+  <div id="dateList2"></div>
+</div>
+
+</div>
+
+<script>
+// 🔗 API URL（竣のURL）
+const API_URL = "https://script.google.com/macros/s/AKfycbz6LAGgauCpGL6Ud96L8wDkndYUX76LBcQsFzQvbZDmVq3OYaPSgu2R33dzjcYCFNeMag/exec";
+
+// 🔐 パスワード
+const PASSWORD = "1150";
+
+// 📅 日付フォーマット（昔の sabogumi 形式）
+function formatDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = ("0" + (d.getMonth() + 1)).slice(-2);
+  const day = ("0" + d.getDate()).slice(-2);
+  const h = ("0" + d.getHours()).slice(-2);
+  const min = ("0" + d.getMinutes()).slice(-2);
+  return `${y}/${m}/${day} ${h}:${min}`;
+}
+
+// 🔄 ページ読み込み時：自動ログイン判定
+window.addEventListener("DOMContentLoaded", () => {
+  const auth = localStorage.getItem("auth_sabori");
+  const name = localStorage.getItem("user_name");
+
+  if (auth === "ok") {
+    document.getElementById("passwordScreen").style.display = "none";
+
+    if (!name) {
+      document.getElementById("nameScreen").style.display = "block";
+    } else {
+      openApp();
+    }
+  }
+});
+
+// パスワードチェック
+function checkPW() {
+  const v = document.getElementById("pwInput").value;
+
+  if (v === PASSWORD) {
+    localStorage.setItem("auth_sabori", "ok");
+
+    document.getElementById("passwordScreen").style.display = "none";
+
+    if (!localStorage.getItem("user_name")) {
+      document.getElementById("nameScreen").style.display = "block";
+    } else {
+      openApp();
+    }
+  } else {
+    alert("パスワードが違います");
+  }
+}
+
+// 名前保存
+function saveName() {
+  const name = document.getElementById("nameInput").value.trim();
+  if (!name) return alert("名前を入力してください");
+
+  localStorage.setItem("user_name", name);
+
+  document.getElementById("nameScreen").style.display = "none";
+  openApp();
+}
+
+// アプリ表示
+function openApp() {
+  document.getElementById("nameScreen").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  loadPosts();
+  loadDates();
+}
+
+// 🔄 タブ切り替え
+function show(id, btn) {
+  document.querySelectorAll(".section").forEach(s => s.style.display = "none");
+  document.getElementById(id).style.display = "block";
+
+  document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+// 📝 投稿保存
+function saveReason() {
+  const t = document.getElementById("reasonText").value;
+  if (!t) return;
+  savePost("サボる理由", t);
+  document.getElementById("reasonText").value = "";
+}
+
+function saveOpinion() {
+  const t = document.getElementById("opinionText").value;
+  if (!t) return;
+  savePost("ご意見", t);
+  document.getElementById("opinionText").value = "";
+}
+
+function savePost(type, text) {
+  const name = localStorage.getItem("user_name") || "名無し";
+
+  fetch(API_URL + "?sheet=posts", {
+    method: "POST",
+    body: JSON.stringify([type, text, name, formatDate()])
+  })
+  .then(() => loadPosts());
+}
+
+// 📥 投稿読み込み
+function loadPosts() {
+  fetch(API_URL + "?sheet=posts")
+    .then(res => res.json())
+    .then(rows => {
+      const box = document.getElementById("postList");
+      box.innerHTML = "";
+
+      rows.slice(1).forEach(r => {
+        box.innerHTML += `
+          <div class="card">
+            <b>${r[0]}</b><br>
+            ${r[1]}<br>
+            <small>投稿者：${r[2]} / ${r[3]}</small>
+          </div>`;
+      });
+    });
+}
+
+// 📅 オフ/部停 保存
+function addDate() {
+  const d = document.getElementById("dateInput").value;
+  const t = document.getElementById("typeInput").value;
+  if (!d) return;
+
+  fetch(API_URL + "?sheet=dates", {
+    method: "POST",
+    body: JSON.stringify([d, t])
+  })
+  .then(() => loadDates());
+}
+
+// 📥 オフ/部停 読み込み（過去の日は非表示）
+function loadDates() {
+  fetch(API_URL + "?sheet=dates")
+    .then(res => res.json())
+    .then(rows => {
+      const box = document.getElementById("dateList2");
+      const nextOffBox = document.getElementById("nextOff");
+
+      box.innerHTML = "";
+      nextOffBox.innerHTML = "データ読み込み中…";
+
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      let nextOffs = [];
+
+      rows.slice(1).forEach(r => {
+        const dateStr = r[0];
+        const type = r[1];
+
+        const date = new Date(dateStr);
+        date.setHours(0,0,0,0);
+
+        // 🔥 過去の日は表示しない
+        if (date < today) return;
+
+        // 一覧表示（未来だけ）
+        const html = `<div class="card">${dateStr}：${type}</div>`;
+        box.innerHTML += html;
+
+        // 次のオフ日候補
+        if (type === "オフ") {
+          nextOffs.push(date);
+        }
+      });
+
+      // 次のオフ日を決定
+      nextOffs.sort((a, b) => a - b);
+
+      if (nextOffs.length === 0) {
+        nextOffBox.innerHTML = "次のオフは登録されていません";
+      } else {
+        const d = nextOffs[0];
+        nextOffBox.innerHTML = `${d.getMonth() + 1}月${d.getDate()}日です`;
+      }
+    });
+}
+</script>
+
+</body>
+</html>
